@@ -13,7 +13,7 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import train_test_split
 
-from transphorm.model_components.data_objects import AATrialDataModule
+from aa_cls.model_components.data_objects import AATrialDataModule
 
 
 def load_py_data_to_np(path: Path):

@@ -1,27 +1,32 @@
-from pathlib import Path
+import os
 import pickle
+from pathlib import Path
+from typing import Any, Dict, Tuple
+
 import comet_ml
-from dotenv import load_dotenv
+import joblib
 import numpy as np
+import structlog
+from comet_ml.integration.sklearn import log_model
+from dotenv import load_dotenv
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
-from transphorm.model_components.data_objects import AATrialDataModule
-from transphorm.framework_helpers import (
-    dataloader_to_numpy,
-    log_train_evaluation,
-    log_test_evaluation,
-    setup_comet_experimet,
-)
-from imblearn.over_sampling import RandomOverSampler
 from sktime.classification.deep_learning.lstmfcn import LSTMFCNClassifier
-import os
-from comet_ml.integration.sklearn import log_model
 
-import structlog
-import joblib
+from aa_cls.framework_helpers import (
+    dataloader_to_numpy,
+    log_test_evaluation,
+    log_train_evaluation,
+)
 
 
-def set_hypertune_configs():
+def set_hypertune_configs() -> Dict[str, Any]:
+    """
+    Set the hyperparameter tuning configurations for the Bayesian optimization.
+
+    Returns:
+        Dict[str, Any]: A dictionary containing the hyperparameter tuning configurations.
+    """
     configs = {
         "algorithm": "bayes",
         "spec": {
@@ -44,7 +49,16 @@ def set_hypertune_configs():
     return configs
 
 
-def exeperiment_configs(project_name):
+def exeperiment_configs(project_name: str) -> Dict[str, Any]:
+    """
+    Set the experiment configurations for Comet.ml logging.
+
+    Args:
+        project_name (str): The name of the project.
+
+    Returns:
+        Dict[str, Any]: A dictionary containing the experiment configurations.
+    """
     exp_configs = {
         "project_name": project_name,
         "auto_param_logging": True,
@@ -57,29 +71,38 @@ def exeperiment_configs(project_name):
     return exp_configs
 
 
-def load_data(path: Path):
+def load_data(path: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Load and split the data from the given path.
+
+    Args:
+        path (Path): The path to the data file.
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: X_train, X_test, y_train, y_test
+    """
     X, y = dataloader_to_numpy(path)
     X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
     return X_train, X_test, y_train, y_test
 
 
-def train(exp, X_train, y_train):
+def train(
+    exp: comet_ml.Experiment, X_train: np.ndarray, y_train: np.ndarray
+) -> LSTMFCNClassifier:
+    """
+    Train the LSTMFCNClassifier model with the given experiment parameters.
+
+    Args:
+        exp (comet_ml.Experiment): The Comet.ml experiment object.
+        X_train (np.ndarray): The training features.
+        y_train (np.ndarray): The training labels.
+
+    Returns:
+        LSTMFCNClassifier: The trained model.
+    """
     kernel_sizes = tuple(map(int, exp.get_parameter("kernel_sizes").split(",")))
     filter_sizes = tuple(map(int, exp.get_parameter("filter_sizes").split(",")))
     classes = np.unique(y_train)
-
-    # over sample minority class
-    # oversampler = RandomOverSampler(random_state=exp.get_parameter("random_state"))
-    # X_resampled, y_resampled = oversampler.fit_resample(
-    #     X_train.reshape(X_train.shape[0], -1), y_train
-    # )
-    # # reshape x back to orignial
-    # X_resampled = X_resampled.reshape(-1, X_train.shape[1], X_train.shape[2])
-
-    # # shuffle resampled ata
-    # X_resampled, y_resampled = shuffle(
-    #     X_resampled, y_resampled, random_state=exp.get_parameter("random_state")
-    # )
 
     model_params = {
         "dropout": exp.get_parameter("dropout"),
@@ -96,8 +119,28 @@ def train(exp, X_train, y_train):
 
 
 def run_optimizer(
-    project_name, opt, X_train, X_test, y_train, y_test, log, model_save_dir
-):
+    project_name: str,
+    opt: comet_ml.Optimizer,
+    X_train: np.ndarray,
+    X_test: np.ndarray,
+    y_train: np.ndarray,
+    y_test: np.ndarray,
+    log: structlog.BoundLogger,
+    model_save_dir: Path,
+) -> None:
+    """
+    Run the Bayesian optimization process for hyperparameter tuning.
+
+    Args:
+        project_name (str): The name of the project.
+        opt (comet_ml.Optimizer): The Comet.ml optimizer object.
+        X_train (np.ndarray): The training features.
+        X_test (np.ndarray): The testing features.
+        y_train (np.ndarray): The training labels.
+        y_test (np.ndarray): The testing labels.
+        log (structlog.BoundLogger): The logger object.
+        model_save_dir (Path): The directory to save the trained models.
+    """
     exp_configs = exeperiment_configs(project_name)
     for exp in opt.get_experiments(**exp_configs):
         model = train(exp, X_train, y_train)
@@ -130,11 +173,14 @@ def run_optimizer(
         exp.end()
 
 
-def main():
+def main() -> None:
+    """
+    The main function to run the LSTM-FCN classifier with Bayesian hyperparameter tuning.
+    """
     load_dotenv()
     log = structlog.get_logger()
     PROJECT_NAME = "lstmnfcn_bayes_tuning_5_day_weighted"
-    MODEL_SAVE_DIR = Path("/projects/p31961/transphorm/models/aa_classifiers/sk_models")
+    MODEL_SAVE_DIR = Path("/projects/p31961/aa_cls/models/aa_classifiers/sk_models")
 
     DATA_PATH = Path(os.getenv("DATA_PATH_5_DAY"))
     COMET_API_KEY = os.getenv("COMET_API_KEY")
