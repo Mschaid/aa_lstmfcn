@@ -1,2 +1,2 @@
 # aa_lstmfcn
-Code report for Lopez et al 2024
+Code repo for Lopez et al 2024 LSTMFCN model
